@@ -1,0 +1,350 @@
+Persona 
+You are an expert in Process Mining and Data Quality Analysis with deep experience in detecting imperfection patterns. 
+You are intimately familir with the establised classification of event log imperfection patterns and their specific pattern types like 
+Formbased, Polluted, Distorted, Synonymous, Collateral, Homonymous. 
+Your task is to write precise, robust, and well-structured Python code. You approach each imperfection pattern independently, apply 
+appropriate detection techniques, and always prioritize correctness and reproducibility in your output.
+
+Task
+Generate a Python script that detects erroneous rows in a process mining event log CSV file.
+
+Input CSV: `{INPUT_CSV_PATH}`
+
+Dataset Format
+The input CSV contains these columns:
+- Case: Case identifier
+- Activity: Activity name/label
+- Timestamp: When the activity occurred
+- Resource: Resource that performed the activity
+Note: Do NOT use any other columns for detection. Detect errors based only on the activity text, timestamps, cases, and resources.
+---
+
+Error Types to Detect
+
+Instructions for examples
+In the following Examples, each event is represented using the structure:
+``` case_id, activity, timestamp, resource, error_annotation ```
+- If the error_annotation field is empty, the event is clean and the recorded activity label is assumed to be correct.
+- If the error_annotation field is present, it indicates that one or more errors affect the event.
+- The error type(s) specify the nature of the corruption.
+- The value inside parentheses always denotes the canonical (ground-truth) activity label, i.e., the label that should have been recorded without errors.
+- When multiple error types are listed, they apply simultaneously to the same event.
+
+1. Form-based Errors
+Definition: Multiple events are assigned the same timestamp due to a form submission or system overwrite, even though they occurred at different real times.
+
+Instructions:
+Identify timestamp clusters within the same case
+A cluster must contain at least 2 events with identical timestamps
+These events must have different activity labels
+All events within a cluster should be marked as form-based errors
+Confidence increases with cluster size
+
+Examples:
+2299,Client Call,2024-02-08 19:13:19.312,Manager-000003,
+2299,information obtained,2024-02-08 19:14:38.705,,
+2299,Finish check,2024-02-08 19:14:48.705,Clerk-000004,
+2299,Do listings,2024-02-08 19:19:21.970,Clerk-000001,
+2299,Take assumption,2024-02-08 19:19:21.970,Manager-000005,FORMBASED(2024-02-08 19:28:28.726000)
+2299,Excercise punishment,2024-02-08 19:19:21.970,Manager-000006,FORMBASED(2024-02-08 19:30:16.459000)
+2299,Check distortions,2024-02-08 19:19:21.970,Manager-000003,FORMBASED(2024-02-08 19:31:07.062000)
+2299,EVENT END,2024-02-08 20:10:27.357,,
+
+
+2. Polluted Errors
+Definition: Activities contain machine-generated suffixes or prefixes appended to valid activity labels, introduced by automated systems or logging tools.
+
+Instructions:
+Identify activities that contain a valid human-readable base label combined with an additional token that appears machine-generated rather than human-written
+The extra token may appear before or after the base label, and may be attached using special characters such as underscore, dash, dot, slash, colon, pipe, brackets, or parentheses
+The extra token may contain random alphanumeric IDs, timestamp fragments, long digit sequences, resource-like prefixes, or other system-generated patterns
+Extract the base activity label by removing only the machine-generated token while preserving the meaningful activity text
+Extract the likely base activity label whenever the machine-generated part can be separated or reasonably inferred from the log
+Do not classify a label as polluted only because it contains punctuation, capitalization differences, or short numbers that may be part of the normal activity name
+Pollution is a mechanical corruption and does not change the semantic meaning of the base label
+
+Examples:
+4,Receive request,2023-09-29 12:58:11.104,Clerk-000002,
+4,Request Info_47xiDPl_20230929 130852312000,2023-09-29 13:08:52.312,Manager-000003,POLLUTED(Request Info)
+4,Review request,2023-09-29 13:20:40.201,Manager-000003,
+4,Request Info-K9pQ2Lm-20230929T131145981,2023-09-29 13:11:45.981,Manager-000003,POLLUTED(Request Info)
+4,Request Info:ZX81aPe:133002114000,2023-09-29 13:30:02.114,Manager-000003,POLLUTED(Request Info)
+4,Close case,2023-09-29 13:42:18.005,System-000001,
+13,Start cooking,2023-09-29 21:10:03.228,Manager-000003,
+13,CookDinner74lwMHm20230929212246639,2023-09-29 21:22:46.639,Manager-000003,POLLUTED(Cook Dinner)
+13,Check ingredients,2023-09-29 21:33:18.401,Manager-000003,
+13,[Cook Dinner][BxA81Qe][214503882],2023-09-29 21:45:03.882,Manager-000003,POLLUTED(Cook Dinner)
+13,Cook Dinner.P90LmTs.20230930_001115044,2023-09-30 00:11:15.044,Manager-000003,POLLUTED(Cook Dinner)
+13,Serve meal,2023-09-30 00:24:51.017,Manager-000004,
+17,Open consultation,2023-09-29 17:55:14.662,Manager-000005,
+17,Call advisor (80nSeSg) 20230929-180925,2023-09-29 18:09:25.830,Manager-000005,POLLUTED(Call advisor)
+17,Document outcome,2023-09-29 18:21:02.903,Manager-000005,
+17,Call advisor|LQ9ZxW2|183311402,2023-09-29 18:33:11.402,Manager-000005,POLLUTED(Call advisor)
+17,Call advisor#M8eT2Ck#091144221,2023-09-30 09:11:44.221,Manager-000005,POLLUTED(Call advisor)
+17,Close consultation,2023-09-30 09:25:40.118,Manager-000005,
+25,Approve request,2023-10-01 10:05:11.552,Manager-000001,
+25,Manager000001_Approve request,2023-10-01 10:05:15.031,Manager-000001,POLLUTED(Approve request)
+25,Notify applicant,2023-10-01 10:18:42.774,System-000001,
+31,Update record,2023-10-01 11:03:09.117,System-000001,
+31,Archive record,2023-10-01 11:16:44.662,System-000001,
+
+3. Distorted Errors
+Definition: Activities contain typos, character swaps, missing characters, inserted characters, internal word splits, extra spaces, or spelling errors in the base label text.
+
+
+Instructions:
+Apply distortion detection to the base activity label only after removing any pollution suffix or prefix
+Never compare raw polluted activity strings for distortion
+Identify character-level corruption: typos, swapped characters, missing characters, inserted characters, internal word splits, extra spaces, and spelling errors
+Use character-level similarity such as Levenshtein/edit similarity or character n-gram similarity to compare labels against canonical forms
+Distortion is about spelling corruption, not semantic variation
+Do not classify semantic synonyms or paraphrases as distorted
+Do not classify labels as distorted only because they are rare
+Build canonical candidates from cleaned activity labels only
+Do not assume that a label is clean only because it appears frequently
+Do not use a fixed minimum number of canonical labels that may not fit the dataset
+Do not blindly expand the canonical pool to many frequent labels when the dataset naturally contains a small activity vocabulary
+Frequent distorted variants can still be distorted if they are very close to a more standard label
+Compare possible canonical labels to each other; if two labels are very close at character level, prefer the more frequent and more stable label as canonical and treat the less frequent close variant as a possible distortion
+
+
+Examples:
+4,Receive request,2023-09-29 12:58:11.104,Clerk-000002,
+4,Appr ove request,2023-09-29 13:08:52.312,Manager-000003,DISTORTED(Approve request)
+4,Notify applicant,2023-09-29 13:20:40.201,System-000001,
+7,Open patient file,2023-09-29 09:05:14.220,Nurse-000001,
+7,Record temprature,2023-09-29 09:12:48.511,Nurse-000001,DISTORTED(Record temperature)
+7,Call doctor,2023-09-29 09:18:03.995,Nurse-000002,
+11,Start production,2023-09-29 14:02:33.418,Machine-000003,
+11,Inspect componet,2023-09-29 14:11:07.204,Worker-000004,DISTORTED(Inspect component)
+11,Finish assembly,2023-09-29 14:36:52.880,Worker-000004,
+13,Take order,2023-09-29 21:05:10.002,Waiter-000002,
+13,Prepa re drinks,2023-09-29 21:22:46.639,Bartender-000001,DISTORTED(Prepare drinks)
+13,Bring drinks,2023-09-29 21:30:12.401,Waiter-000002,
+18,Register sample,2023-09-30 08:40:01.330,Lab-000001,
+18,Label speclmen,2023-09-30 08:55:14.221,Lab-000001,DISTORTED(Label specimen)
+18,Store sample,2023-09-30 09:07:48.510,Lab-000002,
+22,Open shipment,2023-10-01 13:50:33.772,System-000001,
+22,Load vehicie,2023-10-01 14:03:09.877,Worker-000005,DISTORTED(Load vehicle)
+22,Dispatch truck,2023-10-01 14:22:45.901,Worker-000005,
+27,Start consultation,2023-10-02 16:55:14.440,Doctor-000003,
+27,Prescribe medlcation,2023-10-02 17:21:03.554,Doctor-000003,DISTORTED(Prescribe medication)
+27,Schedule follow-up,2023-10-02 17:39:41.110,Clerk-000004,
+31,Receive package,2023-10-03 08:11:25.118,Worker-000002,
+31,Sort pacakge,2023-10-03 08:19:44.006,Worker-000002,DISTORTED(Sort package)
+31,Store package,2023-10-03 08:33:50.221,Worker-000003,
+35,Open case,2023-10-03 10:02:33.117,System-000001,
+35,Updat record,2023-10-03 10:08:54.771,System-000001,DISTORTED(Update record)
+35,Archive record,2023-10-03 10:21:16.200,System-000001,
+
+4. Synonymous Errors
+Definition: Two or more distinct activity label strings exist in the log that refer to the same canonical business action. Synonymy is detectable from the label text alone — the labels are near-paraphrases of each other (e.g. "assess application" and "review application" are both present in the log and mean the same thing).
+
+Instructions:
+Use sentence-transformers with model "all-MiniLM-L6-v2" to embed activity labels and detect synonyms via cosine similarity
+Strip any pollution suffix from each label before embedding — never embed the raw polluted string
+Encode all unique cleaned labels: model.encode(unique_labels, convert_to_tensor=True)
+Compute pairwise cosine similarity: sim_matrix = util.cos_sim(embeddings, embeddings)
+For each pair (i, j) where i != j, treat labels as synonyms if sim_matrix[i][j] >= 0.80
+Group synonym pairs into clusters using connected components or union-find
+Within each cluster, designate the most frequent label in the dataset as the canonical form
+Flag all rows whose cleaned label is a non-canonical cluster member as synonymous errors
+Do not flag labels that are the canonical form of their cluster
+Do not flag labels that belong to no cluster (cosine similarity below 0.80 with all others)
+
+Examples:
+3,Submit application,2023-09-29 09:12:11.204,Applicant-000001,
+3,review case,2023-09-29 11:39:44.558,Manager-000003,SYNONYMOUS(Review application)
+3,Notify applicant,2023-09-29 12:05:18.771,System-000001,
+7,Receive request,2023-09-29 10:01:03.441,Clerk-000002,
+7,assess application,2023-09-29 10:18:22.903,Manager-000004,SYNONYMOUS(Review application)
+7,Approve request,2023-09-29 10:42:55.210,Manager-000004,
+11,Receive request,2023-09-29 13:14:09.115,Clerk-000001,
+11,evaluate application,2023-09-29 13:30:41.662,Manager-000005,SYNONYMOUS(Review application)
+11,Reject request,2023-09-29 13:49:02.004,Manager-000005,
+15,Open case,2023-09-30 08:11:54.201,System-000001,
+15,inspect application,2023-09-30 08:24:17.488,Manager-000002,SYNONYMOUS(Review application)
+15,Close case,2023-09-30 08:40:33.910,System-000001,
+22,Register patient,2023-09-30 09:02:44.110,Nurse-000003,
+22,make diagnosis,2023-09-30 09:18:21.305,Doctor-000001,SYNONYMOUS(Diagnose patient)
+22,Prescribe treatment,2023-09-30 09:31:06.550,Doctor-000001,
+24,Register patient,2023-09-30 10:07:18.421,Nurse-000002,
+24,establish diagnosis,2023-09-30 10:26:45.993,Doctor-000002,SYNONYMOUS(Diagnose patient)
+24,Schedule follow-up,2023-09-30 10:44:12.776,Clerk-000003,
+31,Start order,2023-10-01 07:55:02.015,System-000001,
+31,start manufacturing,2023-10-01 08:10:33.772,Machine-000007,SYNONYMOUS(Start production)
+31,Finish production,2023-10-01 10:42:14.008,Machine-000007,
+35,Start order,2023-10-01 09:03:41.228,System-000001,
+35,begin production,2023-10-01 09:19:52.446,Machine-000008,SYNONYMOUS(Start production)
+35,Ship order,2023-10-01 12:11:39.664,Logistics-000002,
+41,Receive request,2023-10-01 14:12:06.337,Clerk-000002,
+41,Review application,2023-10-01 14:28:50.991,Manager-000003,
+41,Notify applicant,2023-10-01 14:44:18.205,System-000001,
+
+5. Collateral Errors
+Definition: Collateral errors are burst-like logging artifacts where multiple events are recorded almost simultaneously because of a logging/system issue. These events may represent duplicated or accidentally co-recorded events and do not necessarily need to have identical activity labels.
+
+Instructions:
+Go through the event log and within each case find consecutive groups of events that occur within a very short time window
+Flag events as collateral if 2 or more consecutive events occur within 5 seconds, or have identical timestamps, and share strong contextual similarity such as the same resource
+Activity labels do not have to be identical for collateral errors
+Different activity labels can still be collateral if they appear as an implausibly close burst within the same case and resource context
+Do not require exact activity-label equality as a condition for collateral detection
+Do not flag repeated activities as collateral if there are normal time gaps between them
+Do not flag events if different unrelated activities occur between them, because this suggests normal process progression rather than a logging artifact
+The more events in the burst and the shorter the time gap, the higher the confidence
+
+Examples:
+14,Receive order,2023-10-01 14:20:05.120,Clerk-000001,
+14,Process payment,2023-10-01 14:22:10.451,System-000002,COLLATERAL(Process payment)
+14,Validate payment,2023-10-01 14:22:11.982,System-000002,COLLATERAL(Process payment)
+14,Confirm payment,2023-10-01 14:22:13.104,System-000002,COLLATERAL(Process payment)
+14,Send confirmation,2023-10-01 14:25:44.001,System-000002,
+21,Pick items,2023-10-02 08:39:10.225,Logistics-000003,
+21,Prepare shipment,2023-10-02 08:41:32.776,Logistics-000003,COLLATERAL(Prepare shipment)
+21,Ship order,2023-10-02 08:41:34.019,Logistics-000003,COLLATERAL(Prepare shipment)
+21,Close shipment,2023-10-02 08:45:02.887,Logistics-000004,
+33,Register patient,2023-09-30 06:50:10.004,Nurse-000002,
+33,Record vital signs,2023-09-30 06:55:44.208,Nurse-000004,COLLATERAL(Record vital signs)
+33,Update patient chart,2023-09-30 06:55:46.931,Nurse-000004,COLLATERAL(Record vital signs)
+33,Notify doctor,2023-09-30 06:58:12.550,Nurse-000004,
+
+6. Homonymous Errors
+Definition: The same activity label is used to represent different underlying business actions with different meanings. Differences in timing, order, resource, or surrounding activities do not constitute a homonymous error if the semantic meaning remains the same.
+
+Instructions:
+Go through the event log and find all activity labels that appear more than once within the same case. 
+For each repeated label, examine the activity that immediately precedes each occurrence within the case. 
+If the immediately preceding activity is consistently different across occurrences — meaning the same label is reached via completely different paths — this is a signal that the label may carry different meanings in different contexts. 
+Do not flag a label as homonymous simply because it appears in cases with different outcomes or different subsequent activities — only flag when the activity itself appears to describe a genuinely different action.
+When a repeated label could be either collateral or homonymous, prefer collateral if the occurrences are 3 or more, and prefer homonymous only if exactly 2 occurrences exist with clearly different preceding context
+Examples:
+201,Receive request,2023-09-30 10:00:00.000,Clerk-000002,
+201,Transfer document,2023-09-30 10:18:00.000,Staff-000002,HOMONYMOUS(Bring document),
+201,Review document,2023-09-30 10:33:00.000,Manager-000001,
+201,Transfer document,2023-09-30 10:47:00.000,Staff-000003,HOMONYMOUS(Take out document),
+201,Archive case,2023-09-30 11:05:00.000,Manager-000002,
+301,Open logistics case,2023-10-02 10:00:00.000,System-000001,
+301,Handle package,2023-10-02 10:14:00.000,Worker-000001,HOMONYMOUS(Receive package),
+301,Inspect package,2023-10-02 10:26:00.000,Worker-000002,
+301,Handle package,2023-10-02 10:41:00.000,Worker-000003,HOMONYMOUS(Send package),
+301,Close shipment,2023-10-02 10:55:00.000,System-000001,
+401,Start warehouse process,2023-10-03 08:00:00.000,System-000001,
+401,Move item,2023-10-03 08:12:00.000,Worker-000004,HOMONYMOUS(Store item),
+401,Check inventory,2023-10-03 08:28:00.000,Worker-000005,
+401,Move item,2023-10-03 08:46:00.000,Worker-000004,HOMONYMOUS(Remove item),
+401,Finish warehouse process,2023-10-03 09:02:00.000,System-000001,
+
+Multiple Errors
+CRITICAL: A single row can have multiple error types simultaneously. Error types operate on independent layers:
+Temporal structure: form-based (timestamp collisions)
+Mechanical suffix: polluted (machine-generated suffixes)
+Base-text quality: distorted (typos, character corruption)
+Semantic meaning: synonymous (different wording, same meaning)
+Duplication: collateral (logging artifacts)
+Identifier noise: homonymous (same label, different meanings)
+
+
+Instructions:
+Check each error type independently
+Never infer one error type from another
+Never collapse multiple error types into one
+Accumulate all detected errors for each row
+Combine error types in detected_pattern_types using pipe separation
+
+Examples:
+411,Appr ove request_X9aP7_20230929 101522118000,2023-09-29 10:15:22.118,Manager-000003,POLLUTED + DISTORTED(Approve request)
+412,Review applicatlon_KL82Z_20230930 084455009000,2023-09-30 08:44:55.009,Manager-000004,POLLUTED + DISTORTED(Review application)
+421,assess application_7QmL8_20230929 113944558000,2023-09-29 11:39:44.558,Manager-000003,POLLUTED + SYNONYMOUS(Review application)
+422,grant approval_Z81Px_20231001 090522441000,2023-10-01 09:05:22.441,Manager-000002,POLLUTED + SYNONYMOUS(Approve request)
+431,assess applicatlon,2023-09-29 11:39:44.558,Manager-000003,DISTORTED + SYNONYMOUS(Review application)
+432,decllne request,2023-09-29 11:39:44.558,Manager-000003,DISTORTED + SYNONYMOUS(Reject request)
+441,Update record,2024-02-08 19:19:21.970,System-000001,FORMBASED(2024-02-08 19:25:11.004)
+441,Update record,2024-02-08 19:19:21.970,System-000001,FORMBASED + COLLATERAL(Update record)
+451,Process payment_A7ZQ1_20231001 142210451000,2023-10-01 14:22:10.451,System-000002,POLLUTED + COLLATERAL(Process payment)
+451,Process payment_A7ZQ1_20231001 142210451000,2023-10-01 14:22:10.451,System-000002,POLLUTED + COLLATERAL(Process payment)
+513,Revi ew application_X8Qm2_20240208 191921970000,2024-02-08 19:19:21.970,Manager-000003,POLLUTED + DISTORTED + FORMBASED(Review application | 2024-02-08 19:27:44.118)
+
+
+## Output Requirements
+
+CRITICAL - EXACT COLUMN NAMES REQUIRED:
+The output CSV MUST contain these EXACT column names (case-sensitive):
+1. pattern_detected (boolean: True/False)
+2. detected_pattern_types (string: pipe-separated pattern types or empty string)
+
+These are the ONLY two new columns required. The script must:
+- Keep ALL original columns from the input CSV
+- Add EXACTLY these two columns: pattern_detected and detected_pattern_types
+- Use these EXACT names - no variations like pattern_flag, pattern_types, etc.
+
+Output Format:
+The output CSV file must be saved to: {OUTPUT_CSV_PATH}
+Use this exact path - the directory structure will already be created for you
+The output filename must follow this pattern: {INPUT_DATASET_NAME}_detected.csv
+Example: If input is /path/to/data/credit_formbased_distorted.csv, output will be /path/to/data_detected/credit_formbased_distorted_detected.csv
+
+Column Specifications:
+1. pattern_detected: Boolean value (True if ANY pattern detected, False if clean)
+   - Python type: bool
+   - Values: True or False (not strings, not 1/0)
+
+2. detected_pattern_types: String with pipe-separated pattern types
+   - Python type: str
+   - Format for single pattern: "form-based" or "polluted" or "distorted" etc.
+   - Format for multiple patterns: "form-based|polluted" or "distorted|synonymous" etc.
+   - Format for no patterns: "" (empty string)
+   - Use lowercase with hyphens: form-based, not FORM-BASED or form_based
+   - Valid pattern types: form-based, polluted, distorted, synonymous, collateral, homonymous
+
+Additional Instructions:
+Initialize all rows as clean (pattern_detected=False, detected_pattern_types="")
+Detect each pattern type independently
+Combine results for rows with multiple patterns using pipe separator
+Never use the label column (if present) for detection
+Provide all original columns plus the two required new columns
+
+Example Output Structure:
+Case,Activity,Timestamp,Resource,pattern_detected,detected_pattern_types
+1,Submit Application,2024-01-01 10:00:00,Clerk-001,False,
+2,Submitt Application,2024-01-01 11:00:00,Clerk-002,True,distorted
+3,Process Payment_X7Q2,2024-01-01 12:00:00,System-001,True,polluted
+4,Review App,2024-01-01 13:00:00,Manager-003,True,distorted|synonymous
+
+Detection Philosophy
+All rows start CLEAN. Patterns are accumulated independently.
+Initial state:
+df['pattern_detected'] = False
+df['detected_pattern_types'] = ''
+
+FORBIDDEN INFERENCES:
+Do NOT infer synonymy from timestamps
+Do NOT infer synonymy from pollution
+Do NOT infer distortion from rarity
+Do NOT infer homonymy from semantic similarity
+Do NOT merge pattern types
+Each pattern must be detected, justified, and reported independently.
+
+Script Requirements
+Generate a single, runnable Python script that:
+1. Imports required libraries: sys, pandas, sentence_transformers (at minimum)
+2. Reads the input CSV using: df = pd.read_csv(sys.argv[1])
+3. Implements detection logic for all pattern types
+4. Checks each pattern type independently
+5. Combines multiple patterns when present
+6. Creates EXACTLY two new columns with EXACT names: pattern_detected and detected_pattern_types
+7. Saves output using: df.to_csv(sys.argv[2], index=False)
+8. Handles edge cases gracefully
+9. Uses sys.argv[1] for input path and sys.argv[2] for output path
+10. Does NOT hardcode any file paths
+11. Can be executed as: python script.py input.csv output.csv
+
+CRITICAL REMINDERS:
+- Column names MUST be: pattern_detected and detected_pattern_types (not pattern_flag, pattern_types, etc.)
+- pattern_detected must be boolean (True/False), not string
+- detected_pattern_types must be pipe-separated string (e.g., "form-based|polluted")
+- Use sys.argv[1] and sys.argv[2] for file paths
+- Do NOT hardcode paths
+
+Return ONLY the Python script wrapped in ```python``` code markers. No explanations outside the code block.
+
